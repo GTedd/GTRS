@@ -11,10 +11,36 @@ use rust_embed::Embed;
 #[folder = "resources/jassets/"]
 pub struct Resources;
 
+/// Environment variable naming a locally built `patchbukkit.jar` that replaces the
+/// embedded one at startup. For development only: it lets Java-side changes be tested
+/// without rebuilding the native library.
+pub const DEV_JAR_ENV: &str = "GTRS_BRIDGE_JAR";
+
 pub fn setup_resources(resources_folder: &Path) -> Result<()> {
     sync_embedded_resources(resources_folder)?;
     cleanup_stale_files(resources_folder);
+    apply_dev_jar_override(resources_folder)?;
 
+    Ok(())
+}
+
+fn apply_dev_jar_override(resources_folder: &Path) -> Result<()> {
+    let Some(dev_jar) = std::env::var_os(DEV_JAR_ENV).filter(|v| !v.is_empty()) else {
+        return Ok(());
+    };
+    let dev_jar = PathBuf::from(dev_jar);
+    if !dev_jar.is_file() {
+        anyhow::bail!(
+            "{DEV_JAR_ENV} is set to '{}', which is not a file",
+            dev_jar.display()
+        );
+    }
+    let target = resources_folder.join("patchbukkit.jar");
+    fs::copy(&dev_jar, &target)?;
+    tracing::warn!(
+        "Using development bridge JAR from {} instead of the embedded one",
+        dev_jar.display()
+    );
     Ok(())
 }
 
