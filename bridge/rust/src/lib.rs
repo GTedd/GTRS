@@ -74,6 +74,20 @@ pub async fn on_load_inner(plugin: &PatchBukkitPlugin, server: Arc<Context>) -> 
             Ok(Ok(())) => {
                 crate::events::handler::JVM_READY.store(true, Ordering::Release);
 
+                // Always bridge the login event, even when no plugin listens for it: handling any
+                // player event registers the player on the Java side. Doing that here, before
+                // Pumpkin sends the first play packet, keeps the (slow) registration out of the
+                // outbound packet path, where it used to delay the login packet behind packets
+                // sent concurrently by other tasks.
+                crate::java::native_callbacks::events::register_single_event::<
+                    pumpkin::plugin::player::player_login::PlayerLoginEvent,
+                >(
+                    &server_clone,
+                    &command_tx,
+                    pumpkin::plugin::EventPriority::Normal,
+                    true,
+                );
+
                 crate::java::native_callbacks::events::register_single_event::<
                     pumpkin::plugin::server::packet::PacketReceivedEvent,
                 >(

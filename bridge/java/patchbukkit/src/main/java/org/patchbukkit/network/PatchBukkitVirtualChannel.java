@@ -23,6 +23,26 @@ public class PatchBukkitVirtualChannel extends EmbeddedChannel {
 
     private static final Logger LOGGER = Logger.getLogger("PatchBukkitVirtualChannel");
 
+    /**
+     * Diagnostic switch ({@code -Dgtrs.bridge.tracePackets=true}): logs every packet that crosses
+     * the bridge at INFO level, so the order in which packets reach the client can be read
+     * straight from the server log.
+     */
+    public static final boolean TRACE_PACKETS = Boolean.getBoolean("gtrs.bridge.tracePackets");
+
+    /** Reads the leading VarInt (the packet id) without moving the reader index; -1 if unreadable. */
+    public static int peekPacketId(ByteBuf buf) {
+        int value = 0;
+        int shift = 0;
+        for (int i = buf.readerIndex(); i < buf.writerIndex() && shift < 35; i++) {
+            byte b = buf.getByte(i);
+            value |= (b & 0x7F) << shift;
+            if ((b & 0x80) == 0) return value;
+            shift += 7;
+        }
+        return -1;
+    }
+
     private static final java.util.concurrent.atomic.AtomicInteger PIPELINE_ERRORS =
         new java.util.concurrent.atomic.AtomicInteger();
 
@@ -32,6 +52,12 @@ public class PatchBukkitVirtualChannel extends EmbeddedChannel {
     private int compressionThreshold = 256;
     private boolean encrypted = false;
     private boolean suppressOutboundBridge = false;
+    /**
+     * False until the real client is known to be in the play state. Packets encoded on the Java
+     * side are play-state packets; sending one earlier (during login or configuration, or before
+     * the login packet) makes the client fail with a protocol error.
+     */
+    private volatile boolean clientInPlay = false;
     private int pipelineDepth = 0;
 
     public PatchBukkitVirtualChannel(UUID playerUuid) {
@@ -206,6 +232,14 @@ public class PatchBukkitVirtualChannel extends EmbeddedChannel {
         return suppressOutboundBridge;
     }
 
+    public void markClientInPlay() {
+        this.clientInPlay = true;
+    }
+
+    public boolean isClientInPlay() {
+        return clientInPlay;
+    }
+
     private void setupPipeline() {
         // Full Vanilla Minecraft pipeline structure:
         // Inbound:  timeout -> legacy_query -> splitter -> [decrypt] -> [decompress] -> decoder -> packet_handler
@@ -221,7 +255,13 @@ public class PatchBukkitVirtualChannel extends EmbeddedChannel {
                 if (msg instanceof ByteBuf buf) {
                     try {
                         int readable = buf.readableBytes();
-                        if (readable > 0 && !suppressOutboundBridge) {
+                        if (TRACE_PACKETS) {
+                            LOGGER.info("[trace] java->client id=0x" + Integer.toHexString(peekPacketId(buf))
+                                + " len=" + readable + (suppressOutboundBridge ? " SUPPRESSED" : "")
+                                + (clientInPlay ? "" : " DROPPED(client not in play)")
+                                + " thread=" + Thread.currentThread().getName());
+                        }
+                        if (readable > 0 && !suppressOutboundBridge && clientInPlay) {
                             try {
                                 if (!org.patchbukkit.bridge.NativeFastPathFfi.sendRawPacket(playerUuid, buf)) {
                                     byte[] bytes = new byte[readable];

@@ -46,6 +46,12 @@ public class PatchBukkitEventFactory {
             if (event.isAsynchronous()) {
                 org.patchbukkit.bootstrap.HeadlessPaperServer.enterAsyncThread();
             }
+            if (event instanceof org.bukkit.event.player.PlayerJoinEvent joinEvent) {
+                // Pumpkin fires its join event after the login packet went out, so from here on
+                // packets that plugins send through the Java side may reach the client.
+                org.patchbukkit.network.VirtualChannelManager.getInstance()
+                        .markClientInPlay(joinEvent.getPlayer().getUniqueId());
+            }
             if (org.patchbukkit.bootstrap.HeadlessPaperServer.isBooted()) {
                 if (event instanceof com.destroystokyo.paper.event.server.ServerTickStartEvent) {
                     org.patchbukkit.bootstrap.SchedulerBridge.onServerTick();

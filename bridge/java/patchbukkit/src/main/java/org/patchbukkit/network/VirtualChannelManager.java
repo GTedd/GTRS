@@ -39,13 +39,25 @@ public final class VirtualChannelManager {
      */
     public static void registerPlayer(String uuidStr, String name, boolean isOp, int entityId) {
         try {
+            if (PatchBukkitVirtualChannel.TRACE_PACKETS) {
+                LOGGER.info("[trace] registerPlayer begin " + name + " entityId=" + entityId
+                    + " thread=" + Thread.currentThread().getName());
+            }
             UUID uuid = UUID.fromString(uuidStr);
             net.minecraft.server.level.ServerPlayer sp =
                 INSTANCE.getOrCreateServerPlayer(uuid, name != null ? name : "Player", entityId);
             if (sp != null) {
+                // Registration can run before the client has entered the play state, so nothing
+                // it triggers (for example the permission-level packet from setOp) may be sent.
+                PatchBukkitVirtualChannel ch = INSTANCE.channels.get(uuid);
+                boolean prevSuppress = ch != null && ch.isSuppressOutboundBridge();
+                if (ch != null) ch.setSuppressOutboundBridge(true);
                 try {
                     org.patchbukkit.bootstrap.PlayerBridge.applyOpFromPumpkin(sp.getBukkitEntity(), isOp);
-                } catch (Throwable ignored) {}
+                } catch (Throwable ignored) {
+                } finally {
+                    if (ch != null) ch.setSuppressOutboundBridge(prevSuppress);
+                }
             }
         } catch (Throwable t) {
             LOGGER.log(Level.SEVERE, "Failed to register player: " + name, t);
@@ -462,6 +474,14 @@ public final class VirtualChannelManager {
             if (channel.pipeline().get("encoder") != null) {
                 channel.pipeline().replace("encoder", "encoder", new net.minecraft.network.PacketEncoder<>(outboundProtocol));
             }
+            // In the play state vanilla installs a PacketBundlePacker in front of the encoder, which
+            // splits a ClientboundBundlePacket into delimiter + sub-packets. Without it any API that
+            // sends a bundle (for example Player#sendResourcePacks) fails in the encoder with
+            // "Sending unknown packet 'clientbound/minecraft:bundle'".
+            if (channel.pipeline().get("bundle_packer") != null && outboundProtocol.bundlerInfo() != null) {
+                channel.pipeline().replace("bundle_packer", "bundle_packer",
+                        new net.minecraft.network.PacketBundlePacker(outboundProtocol.bundlerInfo()));
+            }
             if (channel.pipeline().get("packet_handler") != null) {
                 channel.pipeline().replace("packet_handler", "packet_handler", connection);
             }
@@ -481,15 +501,11 @@ public final class VirtualChannelManager {
                 }
             }
 
-            // In authentic Paper/Spigot, placing a player into the server dispatches
-            // PlayerJoinEvent so all plugins associate the player before play packets are processed.
-            try {
-                org.bukkit.event.player.PlayerJoinEvent joinEvent =
-                        new org.bukkit.event.player.PlayerJoinEvent(bukkitPlayer, net.kyori.adventure.text.Component.empty());
-                org.bukkit.Bukkit.getPluginManager().callEvent(joinEvent);
-            } catch (Throwable t) {
-                LOGGER.log(Level.WARNING, "[VirtualChannelManager] Failed dispatching PlayerJoinEvent for " + name, t);
-            }
+            // PlayerJoinEvent is NOT dispatched here. Pumpkin fires its own join event once the
+            // client has received the login packet, and the bridge turns that into the single
+            // Bukkit PlayerJoinEvent. Dispatching one here as well made every plugin see the
+            // player join twice: first on this registration thread (not the primary thread, with
+            // outbound packets suppressed), then again for real.
 
             // 7. Outbound JOIN_GAME (ClientboundLoginPacket) -> initializes entityId, dimensionType, and world in packet listeners
             net.minecraft.network.protocol.game.ClientboundLoginPacket loginPacket =
@@ -544,6 +560,15 @@ public final class VirtualChannelManager {
     ) {
         if (payloadLen < 0 || (payloadLen > 0 && payloadAddr == 0L)) return 0;
         UUID uuid = new UUID(uuidMsb, uuidLsb);
+        if (isOutbound != 0) {
+            // Pumpkin only reports outbound packets for clients in the play state.
+            INSTANCE.markClientInPlay(uuid);
+        }
+        if (PatchBukkitVirtualChannel.TRACE_PACKETS) {
+            LOGGER.info("[trace] " + (isOutbound != 0 ? "server->java" : "client->java")
+                + " id=0x" + Integer.toHexString(packetId) + " len=" + payloadLen
+                + " thread=" + Thread.currentThread().getName());
+        }
         PatchBukkitVirtualChannel channel = INSTANCE.getOrCreateChannel(uuid);
         if (channel == null || !channel.isActive() || !channel.hasCustomPipelineHandlers()) return 0;
 
@@ -558,6 +583,17 @@ public final class VirtualChannelManager {
         }
         INSTANCE.handlePacketReceived(uuid, packetId, payload);
         return 0;
+    }
+
+    /**
+     * Marks the real client as being in the play state, after which packets produced on the
+     * Java side are forwarded to it. Called when Pumpkin reports a play-state packet for the
+     * player and when the real join event arrives.
+     */
+    public void markClientInPlay(UUID uuid) {
+        if (uuid == null) return;
+        PatchBukkitVirtualChannel channel = channels.get(uuid);
+        if (channel != null) channel.markClientInPlay();
     }
 
     public void handlePacketReceived(UUID uuid, int packetId, byte[] payload) {
