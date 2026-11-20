@@ -101,8 +101,10 @@ jobs:
       - name: Extract the pristine bridge import outside the workspace
         shell: bash
         run: |
-          mkdir -p "$RUNNER_TEMP/bridge-upstream"
-          git archive "$BRIDGE_IMPORT_COMMIT" bridge | tar -x -C "$RUNNER_TEMP/bridge-upstream"
+          # GNU tar treats "D:..." as a remote host, so convert the Windows path first.
+          dest="$(cygpath -u "$RUNNER_TEMP")/bridge-upstream"
+          mkdir -p "$dest"
+          git archive "$BRIDGE_IMPORT_COMMIT" bridge | tar -x -C "$dest"
       - uses: actions/download-artifact@v8
         with:
           name: bridge-jar
