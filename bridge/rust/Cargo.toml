@@ -1,0 +1,77 @@
+[package]
+name = "patchbukkit"
+version = "0.2.2"
+edition = "2024"
+authors = ["PumpkinMC Contributors"]
+description = "Compatibility layer for running Bukkit, Spigot, and Paper plugins on Pumpkin"
+
+build = "build/main.rs"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pumpkin = { git = "https://github.com/Pumpkin-MC/Pumpkin.git", tag = "0.2.2+26.3-26.60", package = "pumpkin-core" }
+pumpkin-data = { git = "https://github.com/Pumpkin-MC/Pumpkin.git", tag = "0.2.2+26.3-26.60", package = "pumpkin-data" }
+pumpkin-protocol = { git = "https://github.com/Pumpkin-MC/Pumpkin.git", tag = "0.2.2+26.3-26.60", package = "pumpkin-protocol" }
+pumpkin-util = { git = "https://github.com/Pumpkin-MC/Pumpkin.git", tag = "0.2.2+26.3-26.60", package = "pumpkin-util" }
+pumpkin-config = { git = "https://github.com/Pumpkin-MC/Pumpkin.git", tag = "0.2.2+26.3-26.60", package = "pumpkin-config" }
+pumpkin-nbt = { git = "https://github.com/Pumpkin-MC/Pumpkin.git", tag = "0.2.2+26.3-26.60", package = "pumpkin-nbt" }
+pumpkin-api-macros = { git = "https://github.com/Pumpkin-MC/Pumpkin.git", tag = "0.2.2+26.3-26.60", package = "pumpkin-api-macros" }
+
+tokio = "1"
+tracing = { version = "0.1.44", default-features = false, features = ["std", "attributes"] }
+jni = { version = "0.22.4", features = ["invocation"] }
+rust-embed = { version = "8.13.0", features = ["interpolate-folder-path"] }
+walkdir = "2"
+
+anyhow = "1.0"
+uuid = "1.29.0"
+
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+rand = { version = "0.10.3", default-features = false, features = ["std", "std_rng", "thread_rng"] }
+prost = "0.14"
+bytes = "1.12"
+time = { version = "0.3", default-features = false, features = ["std"] }
+
+toml = { version = "1.1", default-features = false, features = ["parse", "display", "serde"] }
+ureq = { version = "3", features = ["json"] }
+sha2 = { version = "=0.11.0", default-features = false, features = ["oid"] }
+
+[dev-dependencies]
+tempfile = "3"
+arc-swap = "1.9"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = [
+    "env-filter",
+    "fmt",
+    "ansi",
+    "time",
+    "std",
+] }
+
+[build-dependencies]
+env_logger = "0.11.11"
+log = "0.4"
+prost-build = "0.14"
+protoc-bin-vendored = "3"
+glob = "0.3.4"
+
+[profile.dev]
+debug = false
+
+[profile.release]
+lto = false
+codegen-units = 16
+
+[lints.clippy]
+# Groups
+all = { level = "deny", priority = -1 }
+# nursery = { level = "deny", priority = -1 }
+# pedantic = { level = "deny", priority = -1 }
+# cargo = { level = "deny", priority = -1 }
+
+multiple_crate_versions = "allow"
+unnecessary_fallible_conversions = "allow"
+not_unsafe_ptr_arg_deref = "allow" # Not sure about this one
