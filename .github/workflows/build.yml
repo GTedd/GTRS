@@ -110,16 +110,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: separate
-          workspaces: |
-            . -> target
-            ${{ runner.temp }}/bridge-upstream/bridge/rust -> target
       - name: Build server alone
         run: cargo build --locked --release -p pumpkin
       - name: Build bridge alone
         shell: bash
         run: |
           cd "$RUNNER_TEMP/bridge-upstream/bridge/rust"
-          cargo build --locked --release
+          cargo build --release
       - name: Collect artifacts
         shell: bash
         run: |
