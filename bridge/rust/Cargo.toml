@@ -11,13 +11,13 @@ build = "build/main.rs"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-pumpkin = { git = "https://github.com/Pumpkin-MC/Pumpkin.git", tag = "0.2.2+26.3-26.60", package = "pumpkin-core" }
-pumpkin-data = { git = "https://github.com/Pumpkin-MC/Pumpkin.git", tag = "0.2.2+26.3-26.60", package = "pumpkin-data" }
-pumpkin-protocol = { git = "https://github.com/Pumpkin-MC/Pumpkin.git", tag = "0.2.2+26.3-26.60", package = "pumpkin-protocol" }
-pumpkin-util = { git = "https://github.com/Pumpkin-MC/Pumpkin.git", tag = "0.2.2+26.3-26.60", package = "pumpkin-util" }
-pumpkin-config = { git = "https://github.com/Pumpkin-MC/Pumpkin.git", tag = "0.2.2+26.3-26.60", package = "pumpkin-config" }
-pumpkin-nbt = { git = "https://github.com/Pumpkin-MC/Pumpkin.git", tag = "0.2.2+26.3-26.60", package = "pumpkin-nbt" }
-pumpkin-api-macros = { git = "https://github.com/Pumpkin-MC/Pumpkin.git", tag = "0.2.2+26.3-26.60", package = "pumpkin-api-macros" }
+pumpkin = { path = "../../crates/pumpkin-core", package = "pumpkin-core" }
+pumpkin-data = { path = "../../crates/pumpkin-data", package = "pumpkin-data" }
+pumpkin-protocol = { path = "../../crates/pumpkin-protocol", package = "pumpkin-protocol" }
+pumpkin-util = { path = "../../crates/pumpkin-util", package = "pumpkin-util" }
+pumpkin-config = { path = "../../crates/pumpkin-config", package = "pumpkin-config" }
+pumpkin-nbt = { path = "../../crates/pumpkin-nbt", package = "pumpkin-nbt" }
+pumpkin-api-macros = { path = "../../crates/pumpkin-api-macros", package = "pumpkin-api-macros" }
 
 tokio = "1"
 tracing = { version = "0.1.44", default-features = false, features = ["std", "attributes"] }

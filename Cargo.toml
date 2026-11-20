@@ -27,6 +27,9 @@ members = [
     "tools/pumpkin-codegen",
     "tools/pumpkin-fuzzer",
     "tools/pumpkin-tester",
+    # GTRS: the Bukkit bridge is built together with the server so both sides
+    # share one compilation of pumpkin-core (same features, same type layouts).
+    "bridge/rust",
 ]
 
 # [workspace.lints.rust]
@@ -150,6 +153,14 @@ codegen-units = 16
 
 [profile.release.package.pumpkin-wasm-host-v0_2]
 codegen-units = 16
+
+# GTRS: optimized build that keeps symbols, used for crash analysis on Windows.
+[profile.gtrs-debug]
+inherits = "release"
+lto = false
+codegen-units = 16
+debug = "line-tables-only"
+strip = false
 
 [profile.bench]
 debug = true

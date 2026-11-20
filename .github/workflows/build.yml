@@ -1,0 +1,135 @@
+name: GTRS build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # The generated protobuf and registry code needs a larger rustc stack.
+  RUST_MIN_STACK: 33554432
+
+jobs:
+  bridge-jar:
+    name: Bridge JAR
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          java-version: "25"
+          distribution: "zulu"
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: "9.9.1"
+      - name: Build JAR
+        run: gradle jar --no-daemon
+        working-directory: bridge/java
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bridge-jar
+          path: bridge/java/patchbukkit/build/libs/patchbukkit.jar
+          if-no-files-found: error
+
+  # Server and bridge compiled in one cargo invocation, so both share a single
+  # build of pumpkin-core and of every common dependency.
+  windows:
+    name: Windows x64 (single workspace build)
+    needs: bridge-jar
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: bridge-jar
+          path: bridge/java/patchbukkit/build/libs/
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          java-version: "25"
+          distribution: "zulu"
+      - run: rustup update stable && rustup default stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: workspace
+      - name: Build server and bridge together
+        run: cargo build --locked --profile gtrs-debug -p pumpkin -p patchbukkit
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp target/gtrs-debug/pumpkin.exe target/gtrs-debug/pumpkin.pdb dist/
+          cp target/gtrs-debug/patchbukkit.dll target/gtrs-debug/patchbukkit.pdb dist/
+          rustc --version > dist/rustc-version.txt
+          git rev-parse HEAD > dist/commit.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gtrs-windows-x64
+          path: dist/*
+          if-no-files-found: error
+
+  # Diagnostic: reproduces how upstream ships the two binaries, i.e. the server
+  # and the bridge compiled separately (the bridge from its pristine import,
+  # against the upstream git tag), but with symbols kept. Used to locate the
+  # crash seen with the official Windows binaries.
+  windows-separate:
+    name: Windows x64 (separate builds, as upstream ships)
+    needs: bridge-jar
+    runs-on: windows-latest
+    env:
+      BRIDGE_IMPORT_COMMIT: 5f3c548b9b39ccec5c1f6d638c8cac4df45f7cd6
+      CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
+      CARGO_PROFILE_RELEASE_STRIP: none
+      CARGO_PROFILE_RELEASE_LTO: "false"
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          java-version: "25"
+          distribution: "zulu"
+      - run: rustup update stable && rustup default stable
+      - name: Extract the pristine bridge import outside the workspace
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/bridge-upstream"
+          git archive "$BRIDGE_IMPORT_COMMIT" bridge | tar -x -C "$RUNNER_TEMP/bridge-upstream"
+      - uses: actions/download-artifact@v8
+        with:
+          name: bridge-jar
+          path: ${{ runner.temp }}/bridge-upstream/bridge/java/patchbukkit/build/libs/
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: separate
+          workspaces: |
+            . -> target
+            ${{ runner.temp }}/bridge-upstream/bridge/rust -> target
+      - name: Build server alone
+        run: cargo build --locked --release -p pumpkin
+      - name: Build bridge alone
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP/bridge-upstream/bridge/rust"
+          cargo build --locked --release
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp target/release/pumpkin.exe target/release/pumpkin.pdb dist/
+          cp "$RUNNER_TEMP/bridge-upstream/bridge/rust/target/release/patchbukkit.dll" dist/
+          cp "$RUNNER_TEMP/bridge-upstream/bridge/rust/target/release/patchbukkit.pdb" dist/
+          rustc --version > dist/rustc-version.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gtrs-windows-x64-separate
+          path: dist/*
+          if-no-files-found: error
