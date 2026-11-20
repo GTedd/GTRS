@@ -501,7 +501,12 @@ impl JvmWorker {
             .option("--add-opens=java.base/java.lang.reflect=ALL-UNNAMED")
             .option("--add-opens=java.base/jdk.internal.vm=ALL-UNNAMED")
             .option("--add-opens=java.management/sun.management=ALL-UNNAMED")
-            .option("-Dcom.google.protobuf.useUnsafe=false");
+            .option("-Dcom.google.protobuf.useUnsafe=false")
+            // The embedded JVM never owns the console. Without this, Paper's console appender
+            // lets JLine probe the terminal by spawning a helper process, which can block JVM
+            // startup forever when stdin is a pipe (seen under MSYS shells on Windows).
+            .option("-Dterminal.jline=false")
+            .option("-Dorg.jline.terminal.exec=false");
 
         if let Some(ref agent_jar) = patchbukkit_jar {
             builder = builder.option(format!("-javaagent:{}", agent_jar.to_string_lossy()));
