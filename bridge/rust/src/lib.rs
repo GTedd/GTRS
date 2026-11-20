@@ -88,6 +88,17 @@ pub async fn on_load_inner(plugin: &PatchBukkitPlugin, server: Arc<Context>) -> 
                     true,
                 );
 
+                // Always bridge the join event as well: the Java side only starts forwarding
+                // packets that it produces itself once the real join has been seen.
+                crate::java::native_callbacks::events::register_single_event::<
+                    pumpkin::plugin::player::player_join::PlayerJoinEvent,
+                >(
+                    &server_clone,
+                    &command_tx,
+                    pumpkin::plugin::EventPriority::Normal,
+                    true,
+                );
+
                 crate::java::native_callbacks::events::register_single_event::<
                     pumpkin::plugin::server::packet::PacketReceivedEvent,
                 >(

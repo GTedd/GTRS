@@ -53,11 +53,29 @@ public class PatchBukkitVirtualChannel extends EmbeddedChannel {
     private boolean encrypted = false;
     private boolean suppressOutboundBridge = false;
     /**
-     * False until the real client is known to be in the play state. Packets encoded on the Java
-     * side are play-state packets; sending one earlier (during login or configuration, or before
-     * the login packet) makes the client fail with a protocol error.
+     * False until the real join event for this player has arrived. Until then the client may
+     * not have processed the login packet yet, and a play packet that originates on the Java
+     * side (for example an abilities update from another thread) would reach it first and make
+     * it fail with a protocol error. Such packets are dropped; Pumpkin is the authority for the
+     * player's initial state anyway.
      */
     private volatile boolean clientInPlay = false;
+
+    /**
+     * Set on a thread while it relays one of Pumpkin's own outbound packets through this
+     * pipeline. Relayed packets are always forwarded: they are already in Pumpkin's order.
+     */
+    private static final ThreadLocal<Boolean> RELAYING = ThreadLocal.withInitial(() -> Boolean.FALSE);
+
+    public static boolean beginRelay() {
+        boolean prev = RELAYING.get();
+        RELAYING.set(Boolean.TRUE);
+        return prev;
+    }
+
+    public static void endRelay(boolean prev) {
+        RELAYING.set(prev);
+    }
     private int pipelineDepth = 0;
 
     public PatchBukkitVirtualChannel(UUID playerUuid) {
@@ -258,10 +276,10 @@ public class PatchBukkitVirtualChannel extends EmbeddedChannel {
                         if (TRACE_PACKETS) {
                             LOGGER.info("[trace] java->client id=0x" + Integer.toHexString(peekPacketId(buf))
                                 + " len=" + readable + (suppressOutboundBridge ? " SUPPRESSED" : "")
-                                + (clientInPlay ? "" : " DROPPED(client not in play)")
+                                + (clientInPlay || RELAYING.get() ? "" : " DROPPED(before join)")
                                 + " thread=" + Thread.currentThread().getName());
                         }
-                        if (readable > 0 && !suppressOutboundBridge && clientInPlay) {
+                        if (readable > 0 && !suppressOutboundBridge && (clientInPlay || RELAYING.get())) {
                             try {
                                 if (!org.patchbukkit.bridge.NativeFastPathFfi.sendRawPacket(playerUuid, buf)) {
                                     byte[] bytes = new byte[readable];

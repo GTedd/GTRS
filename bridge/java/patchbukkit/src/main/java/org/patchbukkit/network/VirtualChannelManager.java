@@ -474,13 +474,13 @@ public final class VirtualChannelManager {
             if (channel.pipeline().get("encoder") != null) {
                 channel.pipeline().replace("encoder", "encoder", new net.minecraft.network.PacketEncoder<>(outboundProtocol));
             }
-            // In the play state vanilla installs a PacketBundlePacker in front of the encoder, which
+            // In the play state vanilla installs a PacketBundleUnpacker in front of the encoder, which
             // splits a ClientboundBundlePacket into delimiter + sub-packets. Without it any API that
             // sends a bundle (for example Player#sendResourcePacks) fails in the encoder with
             // "Sending unknown packet 'clientbound/minecraft:bundle'".
             if (channel.pipeline().get("bundle_packer") != null && outboundProtocol.bundlerInfo() != null) {
                 channel.pipeline().replace("bundle_packer", "bundle_packer",
-                        new net.minecraft.network.PacketBundlePacker(outboundProtocol.bundlerInfo()));
+                        new net.minecraft.network.PacketBundleUnpacker(outboundProtocol.bundlerInfo()));
             }
             if (channel.pipeline().get("packet_handler") != null) {
                 channel.pipeline().replace("packet_handler", "packet_handler", connection);
@@ -560,10 +560,6 @@ public final class VirtualChannelManager {
     ) {
         if (payloadLen < 0 || (payloadLen > 0 && payloadAddr == 0L)) return 0;
         UUID uuid = new UUID(uuidMsb, uuidLsb);
-        if (isOutbound != 0) {
-            // Pumpkin only reports outbound packets for clients in the play state.
-            INSTANCE.markClientInPlay(uuid);
-        }
         if (PatchBukkitVirtualChannel.TRACE_PACKETS) {
             LOGGER.info("[trace] " + (isOutbound != 0 ? "server->java" : "client->java")
                 + " id=0x" + Integer.toHexString(packetId) + " len=" + payloadLen
@@ -579,16 +575,20 @@ public final class VirtualChannelManager {
             : new byte[0];
 
         if (isOutbound != 0) {
-            return INSTANCE.handlePacketSent(uuid, packetId, payload) ? 1 : 0;
+            boolean prevRelay = PatchBukkitVirtualChannel.beginRelay();
+            try {
+                return INSTANCE.handlePacketSent(uuid, packetId, payload) ? 1 : 0;
+            } finally {
+                PatchBukkitVirtualChannel.endRelay(prevRelay);
+            }
         }
         INSTANCE.handlePacketReceived(uuid, packetId, payload);
         return 0;
     }
 
     /**
-     * Marks the real client as being in the play state, after which packets produced on the
-     * Java side are forwarded to it. Called when Pumpkin reports a play-state packet for the
-     * player and when the real join event arrives.
+     * Marks the real client as joined, after which packets produced on the Java side are
+     * forwarded to it. Called when the real join event arrives.
      */
     public void markClientInPlay(UUID uuid) {
         if (uuid == null) return;
